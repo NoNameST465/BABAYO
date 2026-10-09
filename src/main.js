@@ -1,4 +1,3 @@
-import './style.css';
 import confetti from 'canvas-confetti';
 import { CATALOG as FALLBACK_CATALOG, formatRupiah, formatDate } from './data.js';
 import {
