@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-labelledby="title">
+  <title id="title">BABAYO</title>
+  <defs>
+    <clipPath id="emblem">
+      <circle cx="250" cy="224" r="174" />
+    </clipPath>
+  </defs>
+  <g stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="16">
+    <path fill="#ffdf00" d="M154 310c-34 21-85 5-97-31-11-33 9-52-25-68 26-18 54-15 77-3-21-24-24-49-7-73 12-18 12-34 0-51 32 1 55 20 64 52l-12 176Zm192 0c34 21 85 5 97-31 11-33-9-52 25-68-26-18-54-15-77-3 21-24 24-49 7-73-12-18-12-34 0-51-32 1-55 20-64 52l12 176Z" />
+    <circle cx="250" cy="224" r="184" fill="#080808" />
+  </g>
+  <g clip-path="url(#emblem)">
+    <circle cx="250" cy="224" r="174" fill="#e13617" />
+    <path fill="#251cff" d="M75 235c48 12 76 54 130 52 44-2 58-46 110-52 37-4 65 15 110 4v168H75V235Z" />
+    <path d="M84 217c41 8 76 48 121 46 55-2 67-46 119-51 38-4 66 13 94 6" fill="none" stroke="#090909" stroke-width="8" />
+    <path d="M113 118c39-39 91-61 147-62m-145 80c26-20 53-31 81-34m104 6c34 15 61 39 80 71" fill="none" stroke="#090909" stroke-linecap="round" stroke-width="8" />
+    <path d="M124 327c22 39 62 66 106 73m-87-91c12 27 33 46 59 55m103-25c-10 24-28 42-52 53" fill="none" stroke="#080808" stroke-linecap="round" stroke-width="7" />
+  </g>
+  <circle cx="250" cy="224" r="174" fill="none" stroke="#080808" stroke-width="10" />
+  <path d="m81 363 338-2 29 93-388 2 21-93Z" fill="#080808" stroke="#fff" stroke-linejoin="round" stroke-width="12" />
+  <path d="m91 451 359-2 1 14-362 4Z" fill="#bdbdbd" />
+  <text x="250" y="437" fill="#ffdf00" font-family="Georgia,serif" font-size="83" font-style="italic" font-weight="900" letter-spacing="-6" stroke="#171300" stroke-width="2" text-anchor="middle">BABAYO</text>
+</svg>
