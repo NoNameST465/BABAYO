@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.catalog (
     image TEXT NOT NULL,
     description TEXT DEFAULT '',
     max_quantity INT DEFAULT 10,
+    quantity INT DEFAULT 0,
     price_weapon_only NUMERIC DEFAULT 0,
     price_bundle NUMERIC DEFAULT 0,
     price_unit NUMERIC DEFAULT 0,
@@ -38,6 +39,8 @@ CREATE TABLE IF NOT EXISTS public.catalog (
     bundle_details TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.catalog ADD COLUMN IF NOT EXISTS quantity INT DEFAULT 0;
 
 -- Turn on Row Level Security (RLS)
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
@@ -69,8 +72,21 @@ CREATE POLICY "Allow public update catalog" ON public.catalog FOR UPDATE USING (
 DROP POLICY IF EXISTS "Allow public delete catalog" ON public.catalog;
 CREATE POLICY "Allow public delete catalog" ON public.catalog FOR DELETE USING (true);
 
--- Enable Realtime for instant notification
-BEGIN;
-  DROP PUBLICATION IF EXISTS supabase_realtime;
-  CREATE PUBLICATION supabase_realtime FOR TABLE public.orders, public.catalog;
-COMMIT;
+-- Add tables to Realtime without dropping the project's publication.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'orders'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'catalog'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.catalog;
+    END IF;
+  END IF;
+END $$;

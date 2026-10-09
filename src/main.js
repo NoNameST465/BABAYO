@@ -1,3 +1,4 @@
+import './style.css';
 import confetti from 'canvas-confetti';
 import { CATALOG as FALLBACK_CATALOG, formatRupiah, formatDate } from './data.js';
 import {
@@ -1121,6 +1122,7 @@ CREATE TABLE IF NOT EXISTS public.catalog (
     name TEXT NOT NULL,
     image TEXT NOT NULL,
     description TEXT DEFAULT '',
+    quantity INT DEFAULT 0,
     price_weapon_only NUMERIC DEFAULT 0,
     price_bundle NUMERIC DEFAULT 0,
     price_unit NUMERIC DEFAULT 0,
@@ -1128,18 +1130,37 @@ CREATE TABLE IF NOT EXISTS public.catalog (
     bundle_details TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
-  ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '';
+ALTER TABLE public.catalog ADD COLUMN IF NOT EXISTS quantity INT DEFAULT 0;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.catalog ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public select orders" ON public.orders;
 CREATE POLICY "Allow public select orders" ON public.orders FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert orders" ON public.orders;
 CREATE POLICY "Allow public insert orders" ON public.orders FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update orders" ON public.orders;
 CREATE POLICY "Allow public update orders" ON public.orders FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete orders" ON public.orders;
 CREATE POLICY "Allow public delete orders" ON public.orders FOR DELETE USING (true);
+DROP POLICY IF EXISTS "Allow public select catalog" ON public.catalog;
 CREATE POLICY "Allow public select catalog" ON public.catalog FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert catalog" ON public.catalog;
 CREATE POLICY "Allow public insert catalog" ON public.catalog FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update catalog" ON public.catalog;
 CREATE POLICY "Allow public update catalog" ON public.catalog FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete catalog" ON public.catalog;
 CREATE POLICY "Allow public delete catalog" ON public.catalog FOR DELETE USING (true);
-ALTER PUBLICATION supabase_realtime ADD TABLE public.orders, public.catalog;`;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'orders') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'catalog') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.catalog;
+    END IF;
+  END IF;
+END $$;`;
 
     navigator.clipboard.writeText(sql);
     showToast('📋 SQL Schema copied to Clipboard!');
