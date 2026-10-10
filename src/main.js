@@ -328,10 +328,13 @@ function renderLeftItemsList(categoryItems) {
     }
 
     const noteHTML = item.description ? `<div style="font-size: 0.8rem; color: var(--accent-gold); margin-top: 0.3rem;">ℹ️ ${escapeHtml(item.description)}</div>` : '';
+    const imageUrl = /^https?:\/\//i.test(item.image)
+      ? item.image
+      : `/${item.image.replace(/^\/?(?:BABAYO\/)?/, 'BABAYO/')}`;
 
     card.innerHTML = `
       <div class="item-list-thumb">
-        <img src="${item.image}" alt="${escapeHtml(item.name)}" loading="lazy" />
+        <img src="${imageUrl}" alt="${escapeHtml(item.name)}" loading="lazy" />
       </div>
       <div class="item-list-info">
         <div class="item-list-title">${escapeHtml(item.name)}</div>
@@ -943,7 +946,7 @@ async function handleSaveCatalogItem() {
     id: catalogItemId.value || 'item-' + Date.now(),
     category: category,
     name: name,
-    image: 'assets/arp.jpg', // default image
+    image: 'BABAYO/assets/arp.jpg', // default image
     description: description,
     quantity: quantity,
     prices: {

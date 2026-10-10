@@ -6,7 +6,7 @@ export const CATALOG = [
     id: 'arp_3d',
     category: 'Senjata Class 3',
     name: '3D Printed ARP',
-    image: 'assets/arp.jpg',
+    image: 'BABAYO/assets/arp.jpg',
     description: 'Senjata taktis berbahan 3D Printed polymer tingkat tinggi, sangat presisi dan ringan.',
     max_quantity: 5,
     prices: {
@@ -19,7 +19,7 @@ export const CATALOG = [
     id: 'ar15_shield',
     category: 'Senjata Class 3',
     name: 'AR 15 SHIELD',
-    image: 'assets/ar15.jpg',
+    image: 'BABAYO/assets/ar15.jpg',
     description: 'Senjata laras panjang assault rifle standar taktis dengan akurasi dan daya tahan maksimal.',
     max_quantity: 5,
     prices: {
@@ -32,7 +32,7 @@ export const CATALOG = [
     id: 'specter_carbine',
     category: 'Senjata Class 3',
     name: 'SPECTER CARBINE',
-    image: 'assets/specter.jpg',
+    image: 'BABAYO/assets/specter.jpg',
     description: 'Senjata carbine premium kelas berat dengan peredam suara bawaan dan daya rusak ekstrim.',
     max_quantity: 3,
     prices: {
@@ -47,7 +47,7 @@ export const CATALOG = [
     id: 'combat_pistol',
     category: 'Senjata Class 2',
     name: 'Combat Pistol Class 2',
-    image: 'assets/pistol.jpg',
+    image: 'BABAYO/assets/pistol.jpg',
     description: 'Pistol taktis seri Class 2 dengan stabilitas rekoil tinggi dan jarak tembak menengah.',
     max_quantity: 10,
     prices: {
@@ -60,7 +60,7 @@ export const CATALOG = [
     id: 'micro_smg',
     category: 'Senjata Class 2',
     name: 'Micro SMG Class 2',
-    image: 'assets/smg.jpg',
+    image: 'BABAYO/assets/smg.jpg',
     description: 'Submachine gun ringkas Class 2 dengan laju tembak tinggi untuk pertempuran jarak dekat.',
     max_quantity: 10,
     prices: {
@@ -75,7 +75,7 @@ export const CATALOG = [
     id: 'heavy_armor_vest',
     category: 'Armor',
     name: 'Heavy Tactical Armor Vest',
-    image: 'assets/armor.jpg',
+    image: 'BABAYO/assets/armor.jpg',
     description: 'Rompi anti-peluru militer Kevlar tingkat tinggi untuk perlindungan maksimal pertempuran.',
     max_quantity: 5,
     prices: {
