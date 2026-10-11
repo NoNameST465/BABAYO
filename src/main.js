@@ -1,5 +1,5 @@
 import confetti from 'canvas-confetti';
-import { CATALOG as FALLBACK_CATALOG, formatRupiah, formatDate } from './data.js';
+import { formatRupiah, formatDate } from './data.js';
 import {
   fetchAllOrders,
   createOrder,
@@ -21,6 +21,10 @@ let catalogState = [];
 let categoriesState = [];   // { id, name, icon, description }
 let isAdminAuthenticated = localStorage.getItem('babayo_admin_auth') === 'true';
 let activeFilter = 'all';
+let selectedAdminOrderCategory = 'all';
+let selectedAdminOrderWeek = getWeekKey(new Date());
+let observedCurrentOrderWeek = selectedAdminOrderWeek;
+let categoryLayout = 'grid';
 let currentActiveCategory = null;
 let selectedAdminCategory = null; // currently selected category in admin panel
 let searchQuery = '';
@@ -28,7 +32,6 @@ let searchQuery = '';
 // DOM Elements
 const navCatalogBtn = document.getElementById('navCatalogBtn');
 const navMyOrdersBtn = document.getElementById('navMyOrdersBtn');
-const navDbConfigBtn = document.getElementById('navDbConfigBtn');
 const navAdminBtn = document.getElementById('navAdminBtn');
 const btnHomeBrand = document.getElementById('btnHomeBrand');
 
@@ -42,6 +45,7 @@ const btnBackToCategories = document.getElementById('btnBackToCategories');
 const activeCategoryTitle = document.getElementById('activeCategoryTitle');
 const activeCategoryCountText = document.getElementById('activeCategoryCountText');
 const itemsListContainer = document.getElementById('itemsListContainer');
+const orderCategoryContext = document.getElementById('orderCategoryContext');
 
 const dbStatusBar = document.getElementById('dbStatusBar');
 const dbStatusDot = document.getElementById('dbStatusDot');
@@ -67,7 +71,6 @@ const adminPanel = document.getElementById('adminPanel');
 const adminLoginForm = document.getElementById('adminLoginForm');
 const adminPinInput = document.getElementById('adminPinInput');
 const btnAdminLogout = document.getElementById('btnAdminLogout');
-const adminCategoryFilter = document.getElementById('adminCategoryFilter');
 
 const tabAdminOrders = document.getElementById('tabAdminOrders');
 const tabAdminCatalog = document.getElementById('tabAdminCatalog');
@@ -80,6 +83,9 @@ const statTotalOrders = document.getElementById('statTotalOrders');
 const statPendingCount = document.getElementById('statPendingCount');
 const statCompletedCount = document.getElementById('statCompletedCount');
 const adminSearchInput = document.getElementById('adminSearchInput');
+const adminOrderWeekFilter = document.getElementById('adminOrderWeekFilter');
+const adminOrderStatusFilter = document.getElementById('adminOrderStatusFilter');
+const adminOrderPeriodLabel = document.getElementById('adminOrderPeriodLabel');
 
 // Category Modal Elements
 const modalCategory = document.getElementById('modalCategory');
@@ -100,6 +106,7 @@ const catalogItemForm = document.getElementById('catalogItemForm');
 const catalogItemId = document.getElementById('catalogItemId');
 const catalogItemCategory = document.getElementById('catalogItemCategory');
 const inputCatalogName = document.getElementById('inputCatalogName');
+const inputCatalogImage = document.getElementById('inputCatalogImage');
 const inputItemQuantity = document.getElementById('inputItemQuantity');
 const inputItemUnitPrice = document.getElementById('inputItemUnitPrice');
 const inputCatalogDescription = document.getElementById('inputCatalogDescription');
@@ -133,7 +140,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Realtime database change detected!');
     refreshCatalogState();
     refreshOrdersData();
-    showToast('🔄 Realtime update: Data diperbarui dari Supabase!');
+    showToast('Realtime update: Data diperbarui dari Supabase!');
   });
 });
 
@@ -167,31 +174,41 @@ function setupNavigation() {
   btnHomeBrand.addEventListener('click', () => switchView('viewCategoryHome'));
   navCatalogBtn.addEventListener('click', () => switchView('viewCategoryHome'));
   navMyOrdersBtn.addEventListener('click', () => switchView('viewMyOrders'));
-  navDbConfigBtn.addEventListener('click', () => openDbModal());
   navAdminBtn.addEventListener('click', () => switchView('viewAdminDashboard'));
   btnBackToCategories.addEventListener('click', () => switchView('viewCategoryHome'));
 }
 
 // --- CATALOG DATA MANAGER ---
 async function refreshCatalogState() {
-  catalogState = await fetchCatalogData();
-  if (!catalogState || catalogState.length === 0) {
-    catalogState = FALLBACK_CATALOG;
-  }
+  catalogState = await fetchCatalogData() || [];
   // Sync categoriesState from catalogState
   syncCategoriesFromCatalog();
   renderHomeCategories();
   renderAdminCategoryList();
   if (selectedAdminCategory) {
     renderAdminItemsForCategory(selectedAdminCategory);
+  } else {
+    renderAdminItemsForCategory(null);
   }
 }
 
 // Sync categories from catalogState (derive unique categories)
 function syncCategoriesFromCatalog() {
-  const storedCats = JSON.parse(localStorage.getItem('babayo_categories') || '[]');
+  let storedCats = [];
+  try {
+    const savedCategories = JSON.parse(localStorage.getItem('babayo_categories') || '[]');
+    if (Array.isArray(savedCategories)) storedCats = savedCategories;
+  } catch (error) {
+    localStorage.removeItem('babayo_categories');
+  }
   // Get all unique categories from catalog items
   const catalogCatNames = [...new Set(catalogState.map(i => i.category))];
+
+  if (localStorage.getItem('babayo_demo_catalog_removed') === 'true') {
+    const legacyCategoryNames = new Set(['Senjata Class 3', 'Senjata Class 2', 'Armor', 'Ammo & Attachment']);
+    storedCats = storedCats.filter(category => !legacyCategoryNames.has(category.name) || catalogCatNames.includes(category.name));
+    localStorage.removeItem('babayo_demo_catalog_removed');
+  }
   
   // Merge: keep existing with metadata, add new ones
   catalogCatNames.forEach(catName => {
@@ -199,7 +216,6 @@ function syncCategoriesFromCatalog() {
       storedCats.push({
         id: 'cat-' + Date.now() + '-' + Math.random().toString(36).slice(2,6),
         name: catName,
-        icon: guessIcon(catName),
         description: ''
       });
     }
@@ -210,17 +226,6 @@ function syncCategoriesFromCatalog() {
   localStorage.setItem('babayo_categories', JSON.stringify(categoriesState));
 }
 
-function guessIcon(catName) {
-  const n = catName.toLowerCase();
-  if (n.includes('class 3') || n.includes('senjata') || n.includes('rifle') || n.includes('gun')) return '🔫';
-  if (n.includes('class 2') || n.includes('pistol') || n.includes('smg')) return '⚔️';
-  if (n.includes('ammo') || n.includes('peluru')) return '⚡';
-  if (n.includes('armor') || n.includes('vest') || n.includes('rompi')) return '🛡️';
-  if (n.includes('knife') || n.includes('pisau')) return '🗡️';
-  if (n.includes('grenade') || n.includes('bom')) return '💣';
-  return '📦';
-}
-
 // Save categories to localStorage
 function saveCategoriesLocal() {
   localStorage.setItem('babayo_categories', JSON.stringify(categoriesState));
@@ -229,6 +234,12 @@ function saveCategoriesLocal() {
 // Render Dynamic Category Cards on Homepage
 function renderHomeCategories() {
   homeCategoryGrid.innerHTML = '';
+  homeCategoryGrid.classList.toggle('is-list', categoryLayout === 'list');
+  document.querySelectorAll('[data-category-layout]').forEach(button => {
+    const isActive = button.dataset.categoryLayout === categoryLayout;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
 
   // Aggregate unique categories
   const categoryMap = {};
@@ -255,14 +266,12 @@ function renderHomeCategories() {
     const card = document.createElement('div');
     card.className = 'main-cat-card';
 
-    // Get icon from categoriesState metadata, fallback to guessIcon
     const catMeta = categoriesState.find(c => c.name === catName);
-    const catIcon = catMeta?.icon || guessIcon(catName);
 
     const itemNamesText = items.map(i => i.name).slice(0, 3).join(', ');
 
     card.innerHTML = `
-      <div class="main-cat-icon">${catIcon}</div>
+      <div class="main-cat-icon" aria-hidden="true">${escapeHtml(catName.slice(0, 1).toUpperCase())}</div>
       <div class="main-cat-title">${catName}</div>
       <div class="main-cat-desc">
         ${catMeta?.description ? escapeHtml(catMeta.description) + '<br>' : ''}
@@ -278,10 +287,18 @@ function renderHomeCategories() {
   });
 }
 
+document.querySelectorAll('[data-category-layout]').forEach(button => {
+  button.addEventListener('click', () => {
+    categoryLayout = button.dataset.categoryLayout;
+    renderHomeCategories();
+  });
+});
+
 // Open Category Detail View & Render Items + Form Dropdown
 function openCategoryDetail(categoryName) {
   currentActiveCategory = categoryName;
   activeCategoryTitle.textContent = categoryName;
+  orderCategoryContext.textContent = categoryName;
 
   const categoryItems = catalogState.filter(item => item.category === categoryName);
   activeCategoryCountText.textContent = `${categoryItems.length} Item Tersedia`;
@@ -327,14 +344,17 @@ function renderLeftItemsList(categoryItems) {
       `;
     }
 
-    const noteHTML = item.description ? `<div style="font-size: 0.8rem; color: var(--accent-gold); margin-top: 0.3rem;">ℹ️ ${escapeHtml(item.description)}</div>` : '';
-    const imageUrl = /^https?:\/\//i.test(item.image)
-      ? item.image
-      : `/${item.image.replace(/^\/?(?:BABAYO\/)?/, 'BABAYO/')}`;
+    const noteHTML = item.description ? `<div style="font-size: 0.8rem; color: var(--accent-gold); margin-top: 0.3rem;">${escapeHtml(item.description)}</div>` : '';
+    const imageValue = item.image?.trim() || '';
+    const imageUrl = /^https?:\/\//i.test(imageValue)
+      ? imageValue
+      : imageValue
+        ? `${import.meta.env.BASE_URL}${imageValue.replace(/^\/?(?:BABAYO\/)?/, '')}`
+        : '';
 
     card.innerHTML = `
       <div class="item-list-thumb">
-        <img src="${imageUrl}" alt="${escapeHtml(item.name)}" loading="lazy" />
+        ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" />` : '<span class="image-placeholder">Tanpa gambar</span>'}
       </div>
       <div class="item-list-info">
         <div class="item-list-title">${escapeHtml(item.name)}</div>
@@ -343,7 +363,7 @@ function renderLeftItemsList(categoryItems) {
         ${noteHTML}
       </div>
       <button class="btn-select-this-item" data-select-id="${item.id}">
-        🎯 Pilih Item
+        Pilih Item
       </button>
     `;
 
@@ -379,7 +399,7 @@ function setupDatabaseBanner() {
     dbStatusText.textContent = 'Mode Supabase Cloud Active (Realtime DB Live)';
   } else {
     dbStatusDot.className = 'status-dot local';
-    dbStatusText.textContent = 'Mode Local Storage Active (Klik untuk Hubungkan Supabase)';
+    dbStatusText.textContent = 'Mode Local Storage Active (Database Supabase belum terhubung)';
   }
 
   btnOpenDbSetup.addEventListener('click', openDbModal);
@@ -416,6 +436,7 @@ function onItemChange() {
   } else {
     variantGroup.style.display = 'none';
   }
+  variantGroup.parentElement.classList.toggle('has-no-variant', !product || !product.prices.weapon_only);
 
   calculateTotal();
 }
@@ -462,7 +483,7 @@ async function handleOrderSubmit() {
   const product = catalogState.find(p => p.id === selectedId);
 
   if (!customerName || !product) {
-    showToast('⚠️ Harap lengkapi Nama dan Item yang dipesan!', 'error');
+    showToast('Harap lengkapi nama dan item yang dipesan!', 'error');
     return;
   }
 
@@ -484,7 +505,7 @@ async function handleOrderSubmit() {
 
   if (res.success) {
     confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
-    showToast(`✅ Pesanan a.n. ${customerName} berhasil dikirim! Status: Pending`, 'success');
+    showToast(`Pesanan a.n. ${customerName} berhasil dikirim. Status: Pending`, 'success');
 
     inputCustomerName.value = '';
     inputOrderNote.value = '';
@@ -492,7 +513,7 @@ async function handleOrderSubmit() {
     await refreshOrdersData();
     switchView('viewMyOrders');
   } else {
-    showToast('❌ Gagal mengirim pesanan, silakan coba lagi.', 'error');
+    showToast('Gagal mengirim pesanan, silakan coba lagi.', 'error');
   }
 }
 
@@ -503,7 +524,7 @@ function renderUserOrdersTable() {
   if (currentOrders.length === 0) {
     userOrdersTableBody.innerHTML = `
       <tr>
-        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
           Belum ada pengajuan pesanan. Silakan ajukan di menu Pilih Kategori.
         </td>
       </tr>
@@ -511,11 +532,37 @@ function renderUserOrdersTable() {
     return;
   }
 
+  let previousWeekKey = null;
+  const currentWeekKey = getWeekKey(new Date());
+
   currentOrders.forEach(order => {
+    const createdAt = new Date(order.created_at);
+    const orderWeekKey = Number.isNaN(createdAt.getTime()) ? 'unknown' : getWeekKey(createdAt);
+    if (orderWeekKey !== previousWeekKey) {
+      const weekRow = document.createElement('tr');
+      let weekLabel = 'Periode tidak diketahui';
+      if (orderWeekKey !== 'unknown') {
+        const weekStart = getWeekStart(createdAt);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        const period = `${formatWeekDate(weekStart)} - ${formatWeekDate(weekEnd)}`;
+        weekLabel = orderWeekKey === currentWeekKey
+          ? `Pembelian minggu ini · Minggu ke-${getISOWeekNumber(weekStart)}`
+          : `Pembelian minggu ke-${getISOWeekNumber(weekStart)}`;
+        weekRow.innerHTML = `<td colspan="7"><span class="order-week-label">${weekLabel}</span><span class="order-week-dates">${period}</span></td>`;
+      } else {
+        weekRow.innerHTML = `<td colspan="7"><span class="order-week-label">${weekLabel}</span></td>`;
+      }
+      weekRow.className = 'order-history-week-row';
+      userOrdersTableBody.appendChild(weekRow);
+      previousWeekKey = orderWeekKey;
+    }
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="font-mono" style="font-size: 0.8rem; color: var(--text-muted);">${formatDate(order.created_at)}</td>
+      <td class="order-date-cell"><strong>${formatDate(order.created_at)}</strong><span>${orderWeekKey === currentWeekKey ? 'Minggu ini' : `Minggu ke-${getISOWeekNumber(getWeekStart(createdAt))}`}</span></td>
       <td><b style="color: #fff;">${escapeHtml(order.customer_name)}</b></td>
+      <td><span class="order-category-tag">${escapeHtml(order.item_category || '-')}</span></td>
       <td>
         <div><b>${escapeHtml(order.item_name)}</b></div>
         <div style="font-size: 0.8rem; color: var(--text-secondary);">${escapeHtml(order.variant)} (${order.quantity}x)</div>
@@ -536,10 +583,10 @@ function setupAdminPanel() {
     if (pin === 'admin123') {
       isAdminAuthenticated = true;
       localStorage.setItem('babayo_admin_auth', 'true');
-      showToast('🔓 Admin Authenticated Successfully!', 'success');
+      showToast('Admin berhasil masuk.', 'success');
       checkAdminAuthState();
     } else {
-      showToast('🔒 PIN Admin Salah! Sandi default: admin123', 'error');
+      showToast('PIN admin salah.', 'error');
     }
   });
 
@@ -547,7 +594,7 @@ function setupAdminPanel() {
     isAdminAuthenticated = false;
     localStorage.removeItem('babayo_admin_auth');
     checkAdminAuthState();
-    showToast('🚪 Logged out from Admin Dashboard');
+    showToast('Anda keluar dari dashboard admin.');
   });
 
   // Admin Sub-Tab Switching
@@ -567,13 +614,14 @@ function setupAdminPanel() {
     if (selectedAdminCategory) renderAdminItemsForCategory(selectedAdminCategory);
   });
 
-  document.querySelectorAll('[data-status-filter]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('[data-status-filter]').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeFilter = btn.dataset.statusFilter;
-      renderAdminOrdersTable();
-    });
+  adminOrderWeekFilter.addEventListener('change', () => {
+    selectedAdminOrderWeek = adminOrderWeekFilter.value;
+    renderAdminOrdersTable();
+  });
+
+  adminOrderStatusFilter.addEventListener('change', () => {
+    activeFilter = adminOrderStatusFilter.value;
+    renderAdminOrdersTable();
   });
 
   adminSearchInput.addEventListener('input', (e) => {
@@ -581,7 +629,6 @@ function setupAdminPanel() {
     renderAdminOrdersTable();
   });
 
-  adminCategoryFilter.addEventListener('change', renderAdminOrdersTable);
 }
 
 function checkAdminAuthState() {
@@ -621,13 +668,14 @@ function updateAdminStats() {
 // Render the left panel: list of categories
 function renderAdminCategoryList() {
   const adminCategoryList = document.getElementById('adminCategoryList');
+  const adminCategorySummary = document.getElementById('adminCategorySummary');
   if (!adminCategoryList) return;
+  adminCategorySummary.textContent = `${categoriesState.length} kategori · ${catalogState.length} item`;
   adminCategoryList.innerHTML = '';
 
   if (categoriesState.length === 0) {
     adminCategoryList.innerHTML = `
       <div class="empty-state-catalog">
-        <div style="font-size: 2rem;">📂</div>
         <div>Belum ada kategori. Klik <b>+ Tambah</b> untuk membuat kategori baru.</div>
       </div>
     `;
@@ -641,15 +689,15 @@ function renderAdminCategoryList() {
     div.className = 'cat-list-item' + (isActive ? ' active' : '');
     div.innerHTML = `
       <div class="cat-list-main" data-cat-select="${escapeHtml(cat.name)}">
-        <div class="cat-list-icon">${escapeHtml(cat.icon || '📦')}</div>
+        <div class="cat-list-icon" aria-hidden="true">${escapeHtml(cat.name.slice(0, 1).toUpperCase())}</div>
         <div class="cat-list-info">
           <div class="cat-list-name">${escapeHtml(cat.name)}</div>
           <div class="cat-list-count">${itemCount} item</div>
         </div>
       </div>
       <div class="cat-list-actions">
-        <button class="btn-icon" data-cat-edit="${escapeHtml(cat.name)}" title="Edit Kategori">✏️</button>
-        <button class="btn-icon btn-icon-danger" data-cat-delete="${escapeHtml(cat.name)}" title="Hapus Kategori">🗑️</button>
+        <button class="btn-icon" data-cat-edit="${escapeHtml(cat.name)}" title="Edit Kategori">Edit</button>
+        <button class="btn-icon btn-icon-danger" data-cat-delete="${escapeHtml(cat.name)}" title="Hapus Kategori">Hapus</button>
       </div>
     `;
     adminCategoryList.appendChild(div);
@@ -691,7 +739,7 @@ function renderAdminCategoryList() {
       categoriesState = categoriesState.filter(c => c.name !== catName);
       saveCategoriesLocal();
       if (selectedAdminCategory === catName) selectedAdminCategory = null;
-      showToast(`🗑️ Kategori "${catName}" berhasil dihapus`);
+      showToast(`Kategori "${catName}" berhasil dihapus.`);
       await refreshCatalogState();
     });
   });
@@ -705,9 +753,16 @@ function renderAdminItemsForCategory(catName) {
   const btnOpenAddItemModal = document.getElementById('btnOpenAddItemModal');
   if (!adminItemsList) return;
 
+  if (!catName) {
+    selectedCategoryLabel.textContent = 'Pilih kategori untuk lihat item';
+    selectedCategoryItemCount.textContent = '';
+    btnOpenAddItemModal.style.display = 'none';
+    adminItemsList.innerHTML = '<div class="empty-state-catalog">Pilih kategori di sebelah kiri untuk melihat dan mengelola item.</div>';
+    return;
+  }
+
   const cat = categoriesState.find(c => c.name === catName);
-  const catIcon = cat?.icon || '📦';
-  selectedCategoryLabel.textContent = `${catIcon} ${catName}`;
+  selectedCategoryLabel.textContent = catName;
   btnOpenAddItemModal.style.display = 'block';
 
   const items = catalogState.filter(i => i.category === catName);
@@ -718,56 +773,45 @@ function renderAdminItemsForCategory(catName) {
   if (items.length === 0) {
     adminItemsList.innerHTML = `
       <div class="empty-state-catalog">
-        <div style="font-size: 2rem;">📭</div>
         <div>Belum ada item di kategori ini. Klik <b>+ Tambah Item</b>.</div>
       </div>
     `;
     return;
   }
 
-  // Render item cards in a table-like list
-  const table = document.createElement('table');
-  table.className = 'orders-table';
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th style="width:40%">Nama Item</th>
-        <th>Quantity / Stok</th>
-        <th>Biaya Satuan</th>
-        <th>Deskripsi</th>
-        <th>Aksi</th>
-      </tr>
-    </thead>
-  `;
-  const tbody = document.createElement('tbody');
+  const itemGrid = document.createElement('div');
+  itemGrid.className = 'admin-catalog-item-list';
 
   items.forEach(item => {
     const qty = item.quantity !== undefined ? item.quantity : (item.max_quantity || '-');
     const unitPrice = item.prices?.unit || item.prices?.weapon_only || 0;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>
-        <b style="color: #fff;">${escapeHtml(item.name)}</b>
-      </td>
-      <td>
-        <span class="qty-badge">${qty}</span>
-      </td>
-      <td class="font-mono" style="color: var(--accent-gold); font-weight:700;">
-        ${formatRupiah(unitPrice)}
-      </td>
-      <td style="font-size: 0.82rem; color: var(--text-secondary);">${escapeHtml(item.description || '-')}</td>
-      <td>
-        <div class="action-buttons">
-          <button class="btn-sm-outline" data-item-edit="${item.id}">✏️ Edit</button>
-          <button class="btn-delete" data-item-delete="${item.id}" title="Hapus">&times;</button>
+    const itemCard = document.createElement('article');
+    itemCard.className = 'admin-catalog-item';
+    itemCard.innerHTML = `
+      <div class="admin-catalog-item-main">
+        <div class="admin-catalog-item-mark" aria-hidden="true">${escapeHtml(item.name.slice(0, 1).toUpperCase())}</div>
+        <div class="admin-catalog-item-copy">
+          <h4>${escapeHtml(item.name)}</h4>
+          <p>${escapeHtml(item.description || 'Belum ada deskripsi item.')}</p>
         </div>
-      </td>
+      </div>
+      <div class="admin-catalog-item-meta">
+        <span class="admin-catalog-item-label">Stok</span>
+        <span class="qty-badge">${qty}</span>
+      </div>
+      <div class="admin-catalog-item-meta">
+        <span class="admin-catalog-item-label">Harga satuan</span>
+        <strong class="admin-catalog-price">${formatRupiah(unitPrice)}</strong>
+      </div>
+      <div class="admin-catalog-item-actions">
+        <button class="btn-sm-outline" data-item-edit="${escapeHtml(item.id)}">Edit</button>
+        <button class="btn-delete" data-item-delete="${escapeHtml(item.id)}" title="Hapus" aria-label="Hapus ${escapeHtml(item.name)}">&times;</button>
+      </div>
     `;
-    tbody.appendChild(tr);
+    itemGrid.appendChild(itemCard);
   });
 
-  table.appendChild(tbody);
-  adminItemsList.appendChild(table);
+  adminItemsList.appendChild(itemGrid);
 
   // Attach listeners
   adminItemsList.querySelectorAll('[data-item-edit]').forEach(btn => {
@@ -784,7 +828,7 @@ function renderAdminItemsForCategory(catName) {
       const item = catalogState.find(c => c.id === id);
       if (!confirm(`Hapus item "${item?.name}"?`)) return;
       await deleteCatalogItem(id);
-      showToast(`🗑️ Item "${item?.name}" berhasil dihapus`);
+      showToast(`Item "${item?.name}" berhasil dihapus.`);
       await refreshCatalogState();
     });
   });
@@ -806,12 +850,12 @@ function setupCategoryModal() {
 
 function openCategoryModal(catToEdit = null) {
   if (catToEdit) {
-    modalCategoryTitle.textContent = '✏️ Edit Kategori';
+    modalCategoryTitle.textContent = 'Edit Kategori';
     categoryEditOldName.value = catToEdit.name;
     inputCategoryName.value = catToEdit.name;
     inputCategoryDescription.value = catToEdit.description || '';
   } else {
-    modalCategoryTitle.textContent = '🗂️ Tambah Kategori Baru';
+    modalCategoryTitle.textContent = 'Tambah Kategori Baru';
     categoryForm.reset();
     categoryEditOldName.value = '';
   }
@@ -826,10 +870,8 @@ async function handleSaveCategory() {
   const name = inputCategoryName.value.trim();
   const description = inputCategoryDescription.value.trim();
   const oldName = categoryEditOldName.value;
-  const icon = categoriesState.find(category => category.name === oldName)?.icon || guessIcon(name);
-
   if (!name) {
-    showToast('⚠️ Nama kategori wajib diisi!', 'error');
+    showToast('Nama kategori wajib diisi.', 'error');
     return;
   }
 
@@ -854,13 +896,11 @@ async function handleSaveCategory() {
   } else if (!oldName) {
     // New category
     if (categoriesState.find(c => c.name === name)) {
-      showToast('⚠️ Kategori dengan nama ini sudah ada!', 'error');
+      showToast('Kategori dengan nama ini sudah ada.', 'error');
       return;
     }
-    categoriesState.push({
-      id: 'cat-' + Date.now(),
-      name, icon, description
-    });
+    categoriesState.push({ id: 'cat-' + Date.now(), name, description });
+    selectedAdminCategory = name;
   } else {
     // Update same name category (icon/desc change)
     const catIdx = categoriesState.findIndex(c => c.name === oldName);
@@ -870,7 +910,7 @@ async function handleSaveCategory() {
   }
 
   saveCategoriesLocal();
-  showToast(`✅ Kategori "${name}" berhasil disimpan!`, 'success');
+  showToast(`Kategori "${name}" berhasil disimpan.`, 'success');
   closeCategoryModal();
   await refreshCatalogState();
   renderAdminOrdersTable();
@@ -893,7 +933,7 @@ function setupCatalogItemModal() {
 function openCatalogItemModal(itemToEdit = null) {
   const category = selectedAdminCategory;
   if (!category && !itemToEdit) {
-    showToast('⚠️ Pilih kategori terlebih dahulu!', 'error');
+    showToast('Pilih kategori terlebih dahulu.', 'error');
     return;
   }
 
@@ -902,19 +942,21 @@ function openCatalogItemModal(itemToEdit = null) {
   catalogItemCategory.value = catName;
 
   if (itemToEdit) {
-    modalCatalogTitle.textContent = '✏️ Edit Item';
+    modalCatalogTitle.textContent = 'Edit Item';
     catalogItemId.value = itemToEdit.id;
     inputCatalogName.value = itemToEdit.name;
+    inputCatalogImage.value = itemToEdit.image || '';
     inputItemQuantity.value = itemToEdit.quantity !== undefined ? itemToEdit.quantity : (itemToEdit.max_quantity || 0);
     // Get unit price: prefer prices.unit, then prices.weapon_only
     inputItemUnitPrice.value = itemToEdit.prices?.unit || itemToEdit.prices?.weapon_only || '';
     inputCatalogDescription.value = itemToEdit.description || '';
   } else {
-    modalCatalogTitle.textContent = '📦 Tambah Item Baru';
+    modalCatalogTitle.textContent = 'Tambah Item Baru';
     catalogItemForm.reset();
     catalogItemId.value = '';
     catalogItemCategory.value = catName;
     itemModalCategoryBadge.textContent = catName;
+    inputCatalogImage.value = '';
     inputItemQuantity.value = 0;
   }
 
@@ -931,14 +973,16 @@ async function handleSaveCatalogItem() {
   const quantity = parseInt(inputItemQuantity.value) || 0;
   const unitPrice = parseFloat(inputItemUnitPrice.value) || 0;
   const description = inputCatalogDescription.value.trim();
+  const existingItem = catalogState.find(item => item.id === catalogItemId.value);
+  const image = inputCatalogImage.value.trim() || existingItem?.image || '';
 
   if (!name || !category) {
-    showToast('⚠️ Nama Item dan Kategori wajib diisi!', 'error');
+    showToast('Nama item dan kategori wajib diisi.', 'error');
     return;
   }
 
   if (!unitPrice) {
-    showToast('⚠️ Biaya Satuan wajib diisi!', 'error');
+    showToast('Biaya satuan wajib diisi.', 'error');
     return;
   }
 
@@ -946,7 +990,7 @@ async function handleSaveCatalogItem() {
     id: catalogItemId.value || 'item-' + Date.now(),
     category: category,
     name: name,
-    image: 'BABAYO/assets/arp.jpg', // default image
+    image,
     description: description,
     quantity: quantity,
     prices: {
@@ -959,40 +1003,88 @@ async function handleSaveCatalogItem() {
 
   const res = await saveCatalogItem(payload);
   if (res.success) {
-    showToast(`✅ Item "${name}" berhasil disimpan!`, 'success');
+    showToast(`Item "${name}" berhasil disimpan.`, 'success');
     closeCatalogModal();
     await refreshCatalogState();
   } else {
-    showToast('❌ Gagal menyimpan item.', 'error');
+    showToast('Gagal menyimpan item.', 'error');
   }
 }
 
 // --- ADMIN ORDERS TABLE RENDERING & ACTIONS ---
 function renderAdminOrdersTable() {
   adminOrdersTableBody.innerHTML = '';
-  const categoryNames = [...new Set([
-    ...categoriesState.map(category => category.name),
-    ...catalogState.map(item => item.category),
-    ...currentOrders.map(order => order.item_category)
-  ])].filter(Boolean).sort((a, b) => a.localeCompare(b));
-  const selectedCategory = adminCategoryFilter.value;
-  adminCategoryFilter.innerHTML = '<option value="all">Semua Kategori</option>';
-  categoryNames.forEach(category => {
-    const option = document.createElement('option');
-    option.value = category;
-    option.textContent = category;
-    adminCategoryFilter.appendChild(option);
+  const categoryNames = [...new Set(categoriesState.map(category => category.name))]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+  const categorySidebar = document.getElementById('adminOrderCategoryList');
+  if (!categoryNames.includes(selectedAdminOrderCategory)) selectedAdminOrderCategory = 'all';
+
+  const sidebarOptions = [
+    { name: 'all', label: 'Semua Kategori', count: currentOrders.length },
+    ...categoryNames.map(name => ({
+      name,
+      label: name,
+      count: currentOrders.filter(order => order.item_category === name).length
+    }))
+  ];
+  categorySidebar.innerHTML = sidebarOptions.map(option => `
+    <button class="admin-order-category${selectedAdminOrderCategory === option.name ? ' active' : ''}"
+      data-order-category="${escapeHtml(option.name)}" aria-pressed="${selectedAdminOrderCategory === option.name}">
+      <span>${escapeHtml(option.label)}</span>
+      <span class="category-order-count">${option.count}</span>
+    </button>
+  `).join('');
+  categorySidebar.querySelectorAll('[data-order-category]').forEach(button => {
+    button.addEventListener('click', () => {
+      selectedAdminOrderCategory = button.dataset.orderCategory;
+      renderAdminOrdersTable();
+    });
   });
-  adminCategoryFilter.value = categoryNames.includes(selectedCategory) ? selectedCategory : 'all';
+
+  const currentWeekKey = getWeekKey(new Date());
+  if (currentWeekKey !== observedCurrentOrderWeek) {
+    selectedAdminOrderWeek = currentWeekKey;
+    observedCurrentOrderWeek = currentWeekKey;
+  }
+  const weekOptions = new Map([[currentWeekKey, getWeekStart(new Date())]]);
+  currentOrders.forEach(order => {
+    const createdAt = new Date(order.created_at);
+    if (!Number.isNaN(createdAt.getTime())) {
+      const weekStart = getWeekStart(createdAt);
+      weekOptions.set(getWeekKey(createdAt), weekStart);
+    }
+  });
+  if (!weekOptions.has(selectedAdminOrderWeek)) selectedAdminOrderWeek = currentWeekKey;
+  adminOrderWeekFilter.innerHTML = [...weekOptions.entries()]
+    .sort(([, firstStart], [, secondStart]) => secondStart - firstStart)
+    .map(([weekKey, weekStart]) => {
+      const weekNumber = getISOWeekNumber(weekStart);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const dateRange = `${formatWeekDate(weekStart)} - ${formatWeekDate(weekEnd)}`;
+      const weekLabel = weekKey === currentWeekKey ? `Minggu ini · Minggu ke-${weekNumber}` : `Minggu ke-${weekNumber}`;
+      return `<option value="${weekKey}"${weekKey === selectedAdminOrderWeek ? ' selected' : ''}>${weekLabel} · ${dateRange}</option>`;
+    })
+    .join('');
+  const selectedWeekStart = weekOptions.get(selectedAdminOrderWeek);
+  const selectedWeekEnd = new Date(selectedWeekStart);
+  selectedWeekEnd.setDate(selectedWeekEnd.getDate() + 6);
+  adminOrderPeriodLabel.textContent = `Menampilkan pesanan minggu ke-${getISOWeekNumber(selectedWeekStart)}: ${formatWeekDate(selectedWeekStart)} - ${formatWeekDate(selectedWeekEnd)}`;
 
   let filtered = currentOrders;
 
-  if (adminCategoryFilter.value !== 'all') {
-    filtered = filtered.filter(order => order.item_category === adminCategoryFilter.value);
+  filtered = filtered.filter(order => {
+    const createdAt = new Date(order.created_at);
+    return !Number.isNaN(createdAt.getTime()) && getWeekKey(createdAt) === selectedAdminOrderWeek;
+  });
+
+  if (selectedAdminOrderCategory !== 'all') {
+    filtered = filtered.filter(order => order.item_category === selectedAdminOrderCategory);
   }
 
   if (activeFilter !== 'all') {
-    filtered = filtered.filter(o => o.status.toLowerCase() === activeFilter.toLowerCase());
+    filtered = filtered.filter(o => (o.status || '').toLowerCase() === activeFilter.toLowerCase());
   }
 
   if (searchQuery) {
@@ -1031,9 +1123,9 @@ function renderAdminOrdersTable() {
       <td>${getStatusBadge(order.status)}</td>
       <td>
         <div class="action-buttons">
-          <button class="btn-acc" data-action="lunas" data-id="${order.id}">🟢 ACC Lunas</button>
-          <button class="btn-done" data-action="done" data-id="${order.id}">✅ Done</button>
-          <button class="btn-reject" data-action="reject" data-id="${order.id}">🔴 Tolak</button>
+          <button class="btn-acc" data-action="lunas" data-id="${order.id}">ACC Lunas</button>
+          <button class="btn-done" data-action="done" data-id="${order.id}">Done</button>
+          <button class="btn-reject" data-action="reject" data-id="${order.id}">Tolak</button>
           <button class="btn-delete" data-action="delete" data-id="${order.id}" title="Hapus">&times;</button>
         </div>
       </td>
@@ -1050,18 +1142,18 @@ function renderAdminOrdersTable() {
       if (action === 'lunas') {
         await updateOrderStatus(id, 'Lunas');
         confetti({ particleCount: 50, spread: 50 });
-        showToast('🟢 Pesanan disetujui -> Status: Lunas');
+        showToast('Pesanan disetujui. Status: Lunas');
       } else if (action === 'done') {
         await updateOrderStatus(id, 'Lunas done');
         confetti({ particleCount: 80, spread: 70 });
-        showToast('✅ Pesanan selesai -> Status: Lunas done');
+        showToast('Pesanan selesai. Status: Lunas done');
       } else if (action === 'reject') {
         await updateOrderStatus(id, 'Ditolak');
-        showToast('🔴 Pesanan ditolak');
+        showToast('Pesanan ditolak.');
       } else if (action === 'delete') {
         if (confirm('Apakah Anda yakin ingin menghapus pesanan ini?')) {
           await deleteOrder(id);
-          showToast('🗑️ Pesanan berhasil dihapus');
+          showToast('Pesanan berhasil dihapus.');
         }
       }
 
@@ -1084,7 +1176,7 @@ function setupModalAndConfig() {
   dbSetupForm.addEventListener('submit', (e) => {
     e.preventDefault();
     saveSupabaseConfig(inputSupabaseUrl.value, inputSupabaseKey.value);
-    showToast('⚡ Credentials Supabase Berhasil Disimpan!');
+    showToast('Credentials Supabase berhasil disimpan.');
     setupDatabaseBanner();
     closeDbModal();
     refreshCatalogState();
@@ -1096,7 +1188,7 @@ function setupModalAndConfig() {
     inputSupabaseUrl.value = '';
     inputSupabaseKey.value = '';
     setupDatabaseBanner();
-    showToast('🔌 Supabase Connection Disconnected (Mode Local Storage)');
+    showToast('Supabase terputus. Mode Local Storage aktif.');
     closeDbModal();
     refreshCatalogState();
     refreshOrdersData();
@@ -1165,7 +1257,7 @@ BEGIN
 END $$;`;
 
     navigator.clipboard.writeText(sql);
-    showToast('📋 SQL Schema copied to Clipboard!');
+    showToast('SQL schema disalin ke clipboard.');
   });
 }
 
@@ -1181,15 +1273,42 @@ function closeDbModal() {
 function getStatusBadge(status) {
   const s = status ? status.toLowerCase() : '';
   if (s === 'pending') {
-    return `<span class="badge badge-pending">⏳ Pending</span>`;
+    return `<span class="badge badge-pending">Pending</span>`;
   } else if (s === 'lunas') {
-    return `<span class="badge badge-lunas">💳 Lunas</span>`;
+    return `<span class="badge badge-lunas">Lunas</span>`;
   } else if (s === 'lunas done' || s === 'done') {
-    return `<span class="badge badge-done">✅ Lunas Done</span>`;
+    return `<span class="badge badge-done">Lunas Done</span>`;
   } else if (s === 'ditolak') {
-    return `<span class="badge badge-ditolak">🔴 Ditolak</span>`;
+    return `<span class="badge badge-ditolak">Ditolak</span>`;
   }
   return `<span class="badge badge-pending">${escapeHtml(status)}</span>`;
+}
+
+function getWeekStart(date) {
+  const weekStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const daysSinceMonday = (weekStart.getDay() + 6) % 7;
+  weekStart.setDate(weekStart.getDate() - daysSinceMonday);
+  return weekStart;
+}
+
+function getWeekKey(date) {
+  const weekStart = getWeekStart(date);
+  const year = weekStart.getFullYear();
+  const month = String(weekStart.getMonth() + 1).padStart(2, '0');
+  const day = String(weekStart.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getISOWeekNumber(date) {
+  const thursday = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
+  const firstThursday = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 4));
+  firstThursday.setUTCDate(firstThursday.getUTCDate() + 3 - ((firstThursday.getUTCDay() + 6) % 7));
+  return 1 + Math.round((thursday - firstThursday) / (7 * 24 * 60 * 60 * 1000));
+}
+
+function formatWeekDate(date) {
+  return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function showToast(message, type = 'info') {

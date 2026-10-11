@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import { CATALOG as INITIAL_CATALOG, INITIAL_ORDERS } from './data.js';
 
 const STORAGE_KEY_CONFIG = 'babayo_supabase_config';
 const STORAGE_KEY_ORDERS = 'babayo_local_orders';
@@ -57,14 +56,15 @@ export function clearSupabaseConfig() {
 // Local Storage Fallback Data Manager for Orders
 function getLocalOrders() {
   const raw = localStorage.getItem(STORAGE_KEY_ORDERS);
-  if (!raw) {
-    localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(INITIAL_ORDERS));
-    return INITIAL_ORDERS;
-  }
+  if (!raw) return [];
   try {
-    return JSON.parse(raw);
+    const orders = JSON.parse(raw);
+    const demoOrderIds = new Set(Array.from({ length: 10 }, (_, index) => `order-${index + 1}`));
+    const filteredOrders = orders.filter(order => !demoOrderIds.has(order.id));
+    if (filteredOrders.length !== orders.length) saveLocalOrders(filteredOrders);
+    return filteredOrders;
   } catch (e) {
-    return INITIAL_ORDERS;
+    return [];
   }
 }
 
@@ -75,14 +75,21 @@ function saveLocalOrders(orders) {
 // Local Storage Fallback Data Manager for Catalog
 function getLocalCatalog() {
   const raw = localStorage.getItem(STORAGE_KEY_CATALOG);
-  if (!raw) {
-    localStorage.setItem(STORAGE_KEY_CATALOG, JSON.stringify(INITIAL_CATALOG));
-    return INITIAL_CATALOG;
-  }
+  if (!raw) return [];
   try {
-    return JSON.parse(raw);
+    const catalog = JSON.parse(raw);
+    const demoItemIds = new Set([
+      'arp_3d', 'ar15_shield', 'specter_carbine', 'combat_pistol',
+      'micro_smg', 'heavy_armor_vest', 'ammo_556', 'attachment_clip'
+    ]);
+    const filteredCatalog = catalog.filter(item => !demoItemIds.has(item.id));
+    if (filteredCatalog.length !== catalog.length) {
+      saveLocalCatalog(filteredCatalog);
+      localStorage.setItem('babayo_demo_catalog_removed', 'true');
+    }
+    return filteredCatalog;
   } catch (e) {
-    return INITIAL_CATALOG;
+    return [];
   }
 }
 
@@ -101,28 +108,6 @@ export async function fetchCatalogData() {
         .order('created_at', { ascending: true });
 
       if (!error && data) {
-        if (data.length === 0) {
-          console.log('Seeding initial catalog to Supabase...');
-          const formattedSeed = INITIAL_CATALOG.map(item => ({
-            id: item.id,
-            category: item.category,
-            name: item.name,
-            image: item.image,
-            description: item.description || '',
-            price_weapon_only: item.prices?.weapon_only || 0,
-            price_bundle: item.prices?.bundle || 0,
-            price_unit: item.prices?.unit || 0,
-            unit_details: item.unitDetails || '',
-            bundle_details: item.bundleDetails || ''
-          }));
-
-          const { data: seeded, error: seedErr } = await client
-            .from('catalog')
-            .insert(formattedSeed)
-            .select();
-
-          if (!seedErr && seeded) return formatCatalogFromDb(seeded);
-        }
         return formatCatalogFromDb(data);
       }
     } catch (err) {
@@ -231,15 +216,6 @@ export async function fetchAllOrders() {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        if (data.length === 0) {
-          console.log('Seeding initial orders to Supabase...');
-          const seedData = INITIAL_ORDERS.map(({ id, ...rest }) => rest);
-          const { data: seeded, error: seedErr } = await client
-            .from('orders')
-            .insert(seedData)
-            .select();
-          if (!seedErr && seeded) return seeded;
-        }
         return data;
       }
     } catch (err) {
